@@ -5,16 +5,23 @@ set -euo pipefail
 
 # ======= Estilo =======
 if [[ -t 1 ]]; then
-  BOLD="\033[1m"; DIM="\033[2m"; RESET="\033[0m"
-  RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; BLUE="\033[34m"; MAGENTA="\033[35m"; CYAN="\033[36m"
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  RESET=$'\033[0m'
+  RED=$'\033[31m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  BLUE=$'\033[34m'
+  MAGENTA=$'\033[35m'
+  CYAN=$'\033[36m'
 else
   BOLD=""; DIM=""; RESET=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""
 fi
-ok()   { printf "${GREEN}✅ %s${RESET}\n" "$*"; }
-bad()  { printf "${RED}❌ %s${RESET}\n" "$*"; }
-info() { printf "${BLUE}ℹ️  %s${RESET}\n" "$*"; }
-title(){ printf "${BOLD}${MAGENTA}▶ %s${RESET}\n" "$*"; }
-warn() { printf "${YELLOW}⚠️  %s${RESET}\n" "$*"; }
+ok()   { printf '%b\n' "${GREEN}✅ %s${RESET}\n" "$*"; }
+bad()  { printf '%b\n' "${RED}❌ %s${RESET}\n" "$*"; }
+info() { printf '%b\n' "${BLUE}ℹ️  %s${RESET}\n" "$*"; }
+title(){ printf '%b\n' "${BOLD}${MAGENTA}▶ %s${RESET}\n" "$*"; }
+warn() { printf '%b\n' "${YELLOW}⚠️  %s${RESET}\n" "$*"; }
 
 # ======= Variáveis (sobrescreva via ENV) =======
 KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
