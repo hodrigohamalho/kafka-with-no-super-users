@@ -1,0 +1,97 @@
+== Kafka Broker user ACL 
+
+This repository has the objective to show you how to run your broker with a not admin user. In other worlds without putting the user in the admin.
+
+=== Requirements 
+
+* Podman (You can use docker if you want)
+
+
+podman volume rm -f zk1-data zk1-log zk2-data zk2-log zk3-data zk3-log 2>/dev/null || true
+podman volume create zk1-data; podman volume create zk1-log
+podman volume create kafka1-data
+
+podman volume create zk2-data; podman volume create zk2-log
+podman volume create kafka2-data
+
+podman volume create zk3-data; podman volume create zk3-log
+podman volume create kafka3-data
+
+podman network rm kafka-net 2>/dev/null || true
+podman network create kafka-net
+
+
+
+# KRAFT 
+# export KAFKA_IMG=registry.redhat.io/amq-streams/kafka-40-rhel9:3.0.1
+# ZK 
+export KAFKA_IMG=registry.redhat.io/amq-streams/kafka-39-rhel9:2.9.1
+
+# zk1
+podman rm -f kafka1; podman rm -f kafka2; podman rm -f kafka3
+
+
+kafka broker1 start
+kafka broker2 start
+kafka broker3 start
+~/kafka-lab/kafka broker3 logs
+~/kafka-lab/kafka broker1 status
+
+./kafka.sh topic_create strimzi-book 6 3
+./kafka.sh topic_create camel-book 6 3
+
+./kafka.sh topic_create orders 6 3
+./kafka.sh topic_create payments 6 3
+./kafka.sh produce orders
+./kafka.sh produce_keyed payments
+./kafka.sh consume payments g-payments
+
+== Console 
+
+    podman run -d --name kafka-ui --network kafka-net -p 8000:8080 \
+    -e KAFKA_CLUSTERS_0_NAME=local \
+    -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS="kafka1:9092,kafka2:9092,kafka3:9092" \
+    provectuslabs/kafka-ui
+
+== Teste 
+
+./kafka.sh container-setup
+./kafka.sh start
+./kafka.sh status
+
+./kafka.sh topic_create orders 6 3
+./kafka.sh topic_describe orders    # veja leader/replicas/ISR por partição
+
+./kafka.sh produce orders           # digite algumas linhas
+
+# em outro terminal:
+./kafka.sh consume orders g-lab     # use um grupo; dá pra abrir 2+ e ver rebalancing
+
+
+./kafka.sh broker2 stop
+./kafka.sh topic_describe orders    # líderes devem migrar; ISR diminui
+./kafka.sh produce orders           # continue produzindo (cluster permanece disponível)
+./kafka.sh broker2 start
+./kafka.sh topic_describe orders    # ISR volta a 3 após catch-up
+
+
+
+Cria usuario do broker 
+
+KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
+podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc "
+/opt/kafka/bin/kafka-configs.sh \
+  --zookeeper zk1:2181,zk2:2181,zk3:2181 \
+  --alter --add-config 'SCRAM-SHA-512=[password=broker-secret]' \
+  --entity-type users --entity-name broker"
+
+
+Pra executar a aplicação: 
+
+export brokers="localhost:19092,localhost:19093,localhost:19094"
+export id="app"
+export secret="app-secret"
+
+
+
+
