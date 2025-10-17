@@ -12,7 +12,7 @@ The focus is on *security, ACLs,* and the *broker behavior when no explicit topi
 
 |===
 | Component | Version / Image | Description
-| Kafka | `registry.redhat.io/amq-streams/kafka-39-rhel9:2.9.1` | Red Hat AMQ Streams (Apache Kafka)
+| Kafka | `registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2` | Red Hat AMQ Streams (Apache Kafka)
 | ZooKeeper | Embedded in Kafka image | Metadata and quorum management
 | Kafka UI | `provectuslabs/kafka-ui:latest` | Visual management console
 | Host OS | macOS with *Podman* | Local environment
@@ -94,11 +94,58 @@ kafka-configs.sh --alter --add-config "SCRAM-SHA-512=[password=ops-secret]"   --
 kafka-configs.sh --alter --add-config "SCRAM-SHA-512=[password=app-secret]"   --entity-type users --entity-name app
 ----
 
-== 🧾 Permissions and Tests
+== 🔒 ACL Matrix and Commands
 
-1. Added *ClusterAction* and internal ACLs for `__*` topics.  
-2. The Quarkus application produced messages normally.  
-3. Brokers were stopped one by one, and the app continued producing/consuming, showing replication works properly.
+The following table summarizes the permissions assigned to each user in this lab:
+
+|===
+| User | Resource | Operation | Permission Type | Description
+
+| broker | Cluster | ClusterAction | ALLOW | Required for internal coordination and replication
+| broker | Topic: `__*` | All | ALLOW | Internal topics (__consumer_offsets, __transaction_state)
+| broker | Group: `*` | Read | ALLOW | To read group metadata during coordination
+
+| ops | Cluster | All | ALLOW | Full operational access for management tools
+| ops | Topic: `*` | All | ALLOW | View and manage all topics (Kafka UI)
+| ops | Group: `*` | All | ALLOW | Manage consumer groups
+
+| app | Topic: `camel-book` | Read, Write | ALLOW | Application produces and consumes data
+| app | Topic: `strimzi-book` | Read, Write | ALLOW | Application produces and consumes data
+| app | Group: `app-group` | Read | ALLOW | Allows consumption using a consumer group
+|===
+
+=== 🧮 ACL Commands
+
+Below are the exact commands used to assign permissions.
+
+[source,bash]
+----
+# === Broker internal permissions ===
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:broker \
+  --operation ClusterAction --cluster
+
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:broker \
+  --operation All --topic "__*"
+
+# === Ops (administration) permissions ===
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:ops \
+  --operation All --cluster --topic '*' --group '*'
+
+# === App (application) permissions ===
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:app \
+  --operation Read --operation Write \
+  --topic camel-book --topic strimzi-book
+
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:app \
+  --operation Read --group app-group
+----
+
+TIP: When SASL authentication is enabled, ACLs can also be managed using `--bootstrap-server` instead of ZooKeeper connection.
 
 === 🧩 ACL Testing
 
