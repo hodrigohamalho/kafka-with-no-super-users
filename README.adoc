@@ -48,6 +48,39 @@ kafka broker3 start
 
 == Console 
 
+Cria usuario pro console 
+KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
+
+podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
+/opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka1:9092 \
+  --alter --add-config "SCRAM-SHA-512=[password=ui-secret]" \
+  --entity-type users --entity-name ui
+'
+
+# CLUSTER: metadados + idempotência (se UI produzir idempotente)
+podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
+/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
+  --add --allow-principal User:ui \
+  --cluster --operation Describe --operation IdempotentWrite
+'
+
+# TÓPICOS: leitura+escrita em todos + describe/config/alter/create/delete
+podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
+/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
+  --add --allow-principal User:ui \
+  --topic "*" \
+  --operation Read --operation Write --operation Describe \
+  --operation Create --operation Delete --operation Alter --operation DescribeConfigs
+'
+
+# GRUPOS: ler/descr. todos (pra navegar consumer groups)
+podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
+/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
+  --add --allow-principal User:ui \
+  --group "*" --operation Read --operation Describe
+'
+
+
     podman run -d --name kafka-ui --network kafka-net -p 8000:8080 \
     -e KAFKA_CLUSTERS_0_NAME=local \
     -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS="kafka1:9092,kafka2:9092,kafka3:9092" \
@@ -95,3 +128,31 @@ export secret="app-secret"
 
 
 
+Listar ACLS
+
+
+podman exec -it kafka1 bash -lc '
+/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 --list --principal User:app
+'
+
+
+# PRODUCER 
+KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
+podman run -it --rm \
+  --network kafka-net \
+  -v $PWD/conf/kafka/client-plain.properties:/opt/kafka/config/client-plain.properties:Z \
+  $KAFKA_IMG bash -lc '
+/opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server kafka1:9092 \
+  --producer.config /opt/kafka/config/client-plain.properties \
+  --topic orders'
+
+# CONSUMER 
+podman run -it --rm \
+  --network kafka-net \
+  -v $PWD/conf/kafka/client-plain.properties:/opt/kafka/config/client-plain.properties:Z \
+  $KAFKA_IMG bash -lc '
+/opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka1:9092 \
+  --consumer.config /opt/kafka/config/client-plain.properties \
+  --topic orders --group g-orders --from-beginning'

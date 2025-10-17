@@ -26,30 +26,29 @@ public class Routes extends RouteBuilder {
     public void configure() throws Exception {
         from("timer:foo?period={{timer.period}}&delay={{timer.delay}}")
                 .routeId("generate-order")
-                .log("Creating Order")
                 .bean(OrderService.class, "generateOrder")
-                .log("Order ${body.item} generated")
                 .to("direct:send-to-broker");
 
         from("direct:send-to-broker")
                 .choice()
-                .when(simple("${body.item} == 'Camel'"))
-                .log("Processing a camel book")
-                .marshal().json() // convert to JSON
-                .to("kafka:camel-book?brokers={{camel.component.kafka.brokers}}")
-                .otherwise()
-                .log("Processing a Strimzi book")
-                .marshal().jacksonXml()
-                .to("kafka:strimzi-book");
+                        .when(simple("${body.item} == 'Camel'"))
+                                .log("Processing a camel book")
+                                .marshal().json() // convert to JSON
+                                .to("kafka:camel-book?requestRequiredAcks=all") // send messages to kafka with ack = all
+                        .otherwise()
+                                .log("Processing a Strimzi book")
+                                .marshal().jacksonXml()
+                        .to("kafka:strimzi-book?requestRequiredAcks=all"); // send messages to kafka with ack = all
 
-        // kafka consumer
+        // kafka consumer from camel-book topic
         from("kafka:camel-book?groupId=camel-book")
                 .routeId("kafka-consumer-camel")
                 .log("[Camel] Message from Kafka: ${body}");
 
-        // kafka consumer
+        // kafka consumer from strimzi-book topic 
         from("kafka:strimzi-book?groupId=strimzi-book")
                 .routeId("kafka-consumer-strimzi")
                 .log("[Strimzi] Message from Kafka: ${body}");
+
     }
 }

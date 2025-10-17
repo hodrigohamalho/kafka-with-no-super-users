@@ -17,11 +17,11 @@ if [[ -t 1 ]]; then
 else
   BOLD=""; DIM=""; RESET=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""
 fi
-ok()   { printf '%b\n' "${GREEN}✅ %s${RESET}\n" "$*"; }
-bad()  { printf '%b\n' "${RED}❌ %s${RESET}\n" "$*"; }
-info() { printf '%b\n' "${BLUE}ℹ️  %s${RESET}\n" "$*"; }
-title(){ printf '%b\n' "${BOLD}${MAGENTA}▶ %s${RESET}\n" "$*"; }
-warn() { printf '%b\n' "${YELLOW}⚠️  %s${RESET}\n" "$*"; }
+ok()   { printf "${GREEN}✅ %s${RESET}\n" "$*"; }
+bad()  { printf "${RED}❌ %s${RESET}\n" "$*"; }
+info() { printf "${BLUE}ℹ️  %s${RESET}\n" "$*"; }
+title(){ printf "${BOLD}${MAGENTA}▶ %s${RESET}\n" "$*"; }
+warn() { printf "${YELLOW}⚠️  %s${RESET}\n" "$*"; }
 
 # ======= Variáveis (sobrescreva via ENV) =======
 KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
@@ -144,6 +144,7 @@ zk_start() {
     bash -lc "echo $id > /var/lib/zookeeper/data/myid && /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties" >/dev/null
   ok "$name iniciado."
 }
+
 # ======= ZK (MINIMAL) =======
 zk_start_min() {
   ensure_network; require_file "$CONF_ZK_MIN"
@@ -176,16 +177,19 @@ broker_start() {
   podman run -d --name "$name" --hostname "$name" --network "$NET" \
     -p "$port:9093" \
     -e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka/config/jaas.conf" \
-    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/jaas.conf:Z \
     -e LOG_DIR="$LOG_DIR_ENV" \
     -e KAFKA_HEAP_OPTS="$KAFKA_HEAP_OPTS" \
     -e KAFKA_GC_LOG_OPTS="$KAFKA_GC_LOG_OPTS" \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/jaas.conf:Z \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/client-broker.properties:Z \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/client-ops.properties:Z \
     -v "$vdata:/var/lib/kafka/data" \
     -v "$conf:/opt/kafka/config/server.properties:Z" \
     "$KAFKA_IMG" \
     bash -lc '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties' >/dev/null
   ok "$name iniciado."
 }
+
 # ======= BROKER (MINIMAL) =======
 broker_start_min() {
   ensure_network
@@ -197,10 +201,12 @@ broker_start_min() {
   podman run -d --name "$name" --hostname "$name" --network "$NET" \
     -p "$port:9093" \
     -e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka/config/jaas.conf" \
-    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/jaas.conf:Z \
     -e LOG_DIR="$LOG_DIR_ENV" \
     -e KAFKA_HEAP_OPTS="$KAFKA_HEAP_OPTS" \
     -e KAFKA_GC_LOG_OPTS="$KAFKA_GC_LOG_OPTS" \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/jaas.conf:Z \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/client-broker.properties:Z \
+    -v $BASE_DIR/conf/kafka/jaas.conf:/opt/kafka/config/client-ops.properties:Z \
     -v "$(broker_vol_data 1):/var/lib/kafka/data" \
     -v "$conf:/opt/kafka/config/server.properties:Z" \
     "$KAFKA_IMG" \
@@ -232,12 +238,37 @@ zk_healthcheck() {
     if kexec "$name" 'exec 3<>/dev/tcp/127.0.0.1/2181'; then ok "$name porta 2181 aberta (sem 4lw)"; else bad "$name não respondeu na porta 2181"; fi
   fi
 }
+
 broker_healthcheck() {
   local name; name="$(broker_name "$1")"
-  if kexec "$name" "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092" >/dev/null 2>&1; then
+
+  # Credenciais usadas para o healthcheck no INTERNAL (SASL SCRAM).
+  # Pode sobrescrever via env: BROKER_SASL_USER / BROKER_SASL_PASSWORD
+  local hc_user="${BROKER_SASL_USER:-broker}"
+  local hc_pass="${BROKER_SASL_PASSWORD:-broker-secret}"
+  local cfg="/opt/kafka/config/client-broker.properties"
+
+  # 2) Tenta INTERNAL (localhost:9092) com SASL
+  if kexec "$name" "/opt/kafka/bin/kafka-broker-api-versions.sh \
+      --bootstrap-server $name:9092 \
+      --command-config $cfg" >/dev/null 2>&1; then
     ok "$name responde API versions"
+    return 0
+  fi
+
+  # 3) Fallback: tenta EXTERNAL (localhost:9093) – útil se INTERNAL estiver ok mas a CLI falhar
+  if kexec "$name" "/opt/kafka/bin/kafka-broker-api-versions.sh \
+      --bootstrap-server localhost:9093 \
+      --command-config $cfg" >/dev/null 2>&1; then
+    ok "$name responde API versions (via EXTERNAL)"
+    return 0
+  fi
+
+  # 4) Último recurso: teste TCP para dar dica se é SASL/ACL ou porta caída
+  if kexec "$name" "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9092 && printf X >&3 && exit 0'" >/dev/null 2>&1; then
+    warn "$name porta 9092 aberta, mas API falhou (verifique SASL/ACL do healthcheck)"
   else
-    bad "$name não respondeu à API"
+    bad "$name não respondeu à API (nem TCP 9092)"
   fi
 }
 
