@@ -1,4 +1,4 @@
-= Kafka Laboratory with Podman (Red Hat AMQ Streams)
+= Kafka without super.users
 :icons: font
 :sectnums:
 
