@@ -154,6 +154,8 @@ Even after explicitly *DENYing* read and write operations, the cluster continued
 
 > Internal broker operations do not require explicit Read/Write ACLs for normal functioning.
 
+[source,bash]
+----
 # === Explicit DENY for Broker on Data Topics ===
 # (used to verify if the cluster still operates normally without topic-level access)
 
@@ -164,11 +166,11 @@ kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:21
 kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
   --add --deny-principal User:broker \
   --operation Write --topic '*'
+----
 
 == ✅ Conclusion
 
 This lab shows that:
-- A Kafka cluster can run fully in Podman containers using SASL authentication.
 - Brokers work correctly *without explicit Read/Write permissions*.
 - Replication continues properly even under restrictive ACL configurations.
 - The ACL permission used to replicate is the `ClusterAction`
