@@ -101,9 +101,8 @@ The following table summarizes the permissions assigned to each user in this lab
 |===
 | User | Resource | Operation | Permission Type | Description
 
-| broker | Cluster | ClusterAction | ALLOW | Required for internal coordination and replication
+| broker | Cluster | ClusterAction, IDEMPOTENT_WRITE, DESCRIBE | ALLOW | Required for internal coordination 
 | broker | Topic: `__*` | All | ALLOW | Internal topics (__consumer_offsets, __transaction_state)
-| broker | Group: `*` | Read | ALLOW | To read group metadata during coordination
 
 | ops | Cluster | All | ALLOW | Full operational access for management tools
 | ops | Topic: `*` | All | ALLOW | View and manage all topics (Kafka UI)
@@ -123,11 +122,13 @@ Below are the exact commands used to assign permissions.
 # === Broker internal permissions ===
 kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
   --add --allow-principal User:broker \
-  --operation ClusterAction --cluster
+  --operation Describe --operation ClusterAction --operation IdempotentWrite \
+  --cluster
 
-kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
-  --add --allow-principal User:broker \
-  --operation All --topic "__*"
+kafka-acls.sh --bootstrap-server <KAFKA_BROKER_URL> --command-config <CONFIG_FILE> \
+  --add --allow-principal User:<BROKER_PRINCIPAL> \
+  --operation Read --operation Write --operation Create \
+  --topic '__*'
 
 # === Ops (administration) permissions ===
 kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
