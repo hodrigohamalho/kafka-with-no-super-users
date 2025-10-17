@@ -1,158 +1,120 @@
-== Kafka Broker user ACL 
+= Kafka Laboratory with Podman (Red Hat AMQ Streams)
+:toc:
+:icons: font
+:sectnums:
 
-This repository has the objective to show you how to run your broker with a not admin user. In other worlds without putting the user in the admin.
+== 🧱 Overview
 
-=== Requirements 
+This lab demonstrates a complete setup of a *3-node Kafka cluster* with *ZooKeeper*, running on *RHEL containers with Podman*.
+The focus is on *security, ACLs,* and the *broker behavior when no explicit topic permissions are configured*.
 
-* Podman (You can use docker if you want)
+== ⚙️ Environment and Versions
 
+|===
+| Component | Version / Image | Description
+| Kafka | `registry.redhat.io/amq-streams/kafka-39-rhel9:2.9.1` | Red Hat AMQ Streams (Apache Kafka)
+| ZooKeeper | Embedded in Kafka image | Metadata and quorum management
+| Kafka UI | `provectuslabs/kafka-ui:latest` | Visual management console
+| Host OS | macOS with *Podman* | Local environment
+|===
 
-podman volume rm -f zk1-data zk1-log zk2-data zk2-log zk3-data zk3-log 2>/dev/null || true
-podman volume create zk1-data; podman volume create zk1-log
-podman volume create kafka1-data
+== 🧰 The kafka.sh Control Script
 
-podman volume create zk2-data; podman volume create zk2-log
-podman volume create kafka2-data
+The `kafka.sh` script orchestrates the creation, startup, and monitoring of the entire cluster.
+It automates container lifecycle and provides an intuitive CLI.
 
-podman volume create zk3-data; podman volume create zk3-log
-podman volume create kafka3-data
+=== Main Commands
 
-podman network rm kafka-net 2>/dev/null || true
-podman network create kafka-net
+[source,bash]
+----
+./kafka.sh container-setup         # Create network and volumes (idempotent)
+./kafka.sh container-destroy       # Remove all containers, volumes, and network
+./kafka.sh start [zks|brokers]     # Start ZooKeepers and Brokers
+./kafka.sh stop [zks|brokers]      # Stop containers
+./kafka.sh status                  # Show health and cluster mode
+./kafka.sh logs                    # Tail logs from all containers
+./kafka.sh topic_create <name> <partitions> <replication>  # Create topics
+----
 
+=== Cluster Modes
 
+- *FULL* → 3 ZooKeepers + 3 Brokers
+- *MINIMAL* → 1 ZooKeeper + 1 Broker (`--minimal` flag)
 
-# KRAFT 
-# export KAFKA_IMG=registry.redhat.io/amq-streams/kafka-40-rhel9:3.0.1
-# ZK 
-export KAFKA_IMG=registry.redhat.io/amq-streams/kafka-39-rhel9:2.9.1
+== 🪶 Test Topics
 
-# zk1
-podman rm -f kafka1; podman rm -f kafka2; podman rm -f kafka3
+Created for replication testing:
 
-
-kafka broker1 start
-kafka broker2 start
-kafka broker3 start
-~/kafka-lab/kafka broker3 logs
-~/kafka-lab/kafka broker1 status
-
-./kafka.sh topic_create strimzi-book 6 3
+[source,bash]
+----
 ./kafka.sh topic_create camel-book 6 3
+./kafka.sh topic_create strimzi-book 6 3
+----
 
-./kafka.sh topic_create orders 6 3
-./kafka.sh topic_create payments 6 3
-./kafka.sh produce orders
-./kafka.sh produce_keyed payments
-./kafka.sh consume payments g-payments
+These topics are used by a *Camel/Quarkus* app that continuously produces and consumes data.
 
-== Console 
+== 🧭 Visual Console (Kafka UI)
 
-Cria usuario pro console 
-KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
+Run the Kafka UI with Podman:
 
-podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
-/opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka1:9092 \
-  --alter --add-config "SCRAM-SHA-512=[password=ui-secret]" \
-  --entity-type users --entity-name ui
-'
+[source,bash]
+----
+podman run -d --name kafka-ui --network kafka-net -p 8000:8080   -e KAFKA_CLUSTERS_0_NAME=local   -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS="kafka1:9092,kafka2:9092,kafka3:9092"   provectuslabs/kafka-ui
+----
 
-# CLUSTER: metadados + idempotência (se UI produzir idempotente)
-podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
-/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
-  --add --allow-principal User:ui \
-  --cluster --operation Describe --operation IdempotentWrite
-'
+When SASL authentication was enabled, the UI used the *ops* user:
 
-# TÓPICOS: leitura+escrita em todos + describe/config/alter/create/delete
-podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
-/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
-  --add --allow-principal User:ui \
-  --topic "*" \
-  --operation Read --operation Write --operation Describe \
-  --operation Create --operation Delete --operation Alter --operation DescribeConfigs
-'
+[source,bash]
+----
+-e KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=SASL_PLAINTEXT -e KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM=SCRAM-SHA-512 -e KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG='org.apache.kafka.common.security.scram.ScramLoginModule required username="ops" password="ops-secret";'
+----
 
-# GRUPOS: ler/descr. todos (pra navegar consumer groups)
-podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc '
-/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 \
-  --add --allow-principal User:ui \
-  --group "*" --operation Read --operation Describe
-'
+== 🔐 Authentication and Users
 
+SASL/SCRAM-SHA-512 authentication was enabled (without SSL for simplicity).
 
-    podman run -d --name kafka-ui --network kafka-net -p 8000:8080 \
-    -e KAFKA_CLUSTERS_0_NAME=local \
-    -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS="kafka1:9092,kafka2:9092,kafka3:9092" \
-    provectuslabs/kafka-ui
+|===
+| User | Role | Permissions / Notes
+| broker | Internal communication | Inter-broker and ZK communication
+| ops | Operations / UI | Broad permissions for management tools
+| app | Application | Produces and consumes messages
+|===
 
-== Teste 
+=== User Creation
 
-./kafka.sh container-setup
-./kafka.sh start
-./kafka.sh status
+[source,bash]
+----
+# Broker (inter-broker)
+kafka-configs.sh --alter --add-config "SCRAM-SHA-512=[password=broker-secret]"   --entity-type users --entity-name broker
 
-./kafka.sh topic_create orders 6 3
-./kafka.sh topic_describe orders    # veja leader/replicas/ISR por partição
+# Ops (tools)
+kafka-configs.sh --alter --add-config "SCRAM-SHA-512=[password=ops-secret]"   --entity-type users --entity-name ops
 
-./kafka.sh produce orders           # digite algumas linhas
+# App (application)
+kafka-configs.sh --alter --add-config "SCRAM-SHA-512=[password=app-secret]"   --entity-type users --entity-name app
+----
 
-# em outro terminal:
-./kafka.sh consume orders g-lab     # use um grupo; dá pra abrir 2+ e ver rebalancing
+== 🧾 Permissions and Tests
 
+1. Added *ClusterAction* and internal ACLs for `__*` topics.  
+2. The Quarkus application produced messages normally.  
+3. Brokers were stopped one by one, and the app continued producing/consuming, showing replication works properly.
 
-./kafka.sh broker2 stop
-./kafka.sh topic_describe orders    # líderes devem migrar; ISR diminui
-./kafka.sh produce orders           # continue produzindo (cluster permanece disponível)
-./kafka.sh broker2 start
-./kafka.sh topic_describe orders    # ISR volta a 3 após catch-up
+=== 🧩 ACL Testing
 
+Even after explicitly *DENYing* read and write operations, the cluster continued functioning, confirming that:
 
+> Internal broker operations do not require explicit Read/Write ACLs for normal functioning.
 
-Cria usuario do broker 
+== ✅ Conclusion
 
-KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
-podman run --rm --network kafka-net "$KAFKA_IMG" bash -lc "
-/opt/kafka/bin/kafka-configs.sh \
-  --zookeeper zk1:2181,zk2:2181,zk3:2181 \
-  --alter --add-config 'SCRAM-SHA-512=[password=broker-secret]' \
-  --entity-type users --entity-name broker"
+This lab shows that:
+- A Kafka cluster can run fully in Podman containers using SASL authentication.
+- Brokers work correctly *without explicit Read/Write permissions*.
+- Replication continues properly even under restrictive ACL configurations.
 
+== 🧩 Next Steps
 
-Pra executar a aplicação: 
-
-export brokers="localhost:19092,localhost:19093,localhost:19094"
-export id="app"
-export secret="app-secret"
-
-
-
-
-Listar ACLS
-
-
-podman exec -it kafka1 bash -lc '
-/opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka1:9092 --list --principal User:app
-'
-
-
-# PRODUCER 
-KAFKA_IMG="${KAFKA_IMG:-registry.redhat.io/amq-streams/kafka-39-rhel9:3.0.1-2}"
-podman run -it --rm \
-  --network kafka-net \
-  -v $PWD/conf/kafka/client-plain.properties:/opt/kafka/config/client-plain.properties:Z \
-  $KAFKA_IMG bash -lc '
-/opt/kafka/bin/kafka-console-producer.sh \
-  --bootstrap-server kafka1:9092 \
-  --producer.config /opt/kafka/config/client-plain.properties \
-  --topic orders'
-
-# CONSUMER 
-podman run -it --rm \
-  --network kafka-net \
-  -v $PWD/conf/kafka/client-plain.properties:/opt/kafka/config/client-plain.properties:Z \
-  $KAFKA_IMG bash -lc '
-/opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka1:9092 \
-  --consumer.config /opt/kafka/config/client-plain.properties \
-  --topic orders --group g-orders --from-beginning'
+- Validate the same behavior in *KRaft mode* (no ZooKeeper).
+- Add Prometheus + Grafana monitoring.
+- Automate user and ACL creation inside `kafka.sh`.
