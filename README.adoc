@@ -1,6 +1,6 @@
 = Kafka Laboratory with Podman (Red Hat AMQ Streams)
-:toc:
 :icons: font
+:sectnums:
 
 == 🧱 Overview
 
