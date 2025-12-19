@@ -124,8 +124,8 @@ kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:21
   --operation Describe --operation ClusterAction --operation IdempotentWrite \
   --cluster
 
-kafka-acls.sh --bootstrap-server <KAFKA_BROKER_URL> --command-config <CONFIG_FILE> \
-  --add --allow-principal User:<BROKER_PRINCIPAL> \
+kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:2181 \
+  --add --allow-principal User:broker \
   --operation Read --operation Write --operation Create \
   --topic '__*'
 
@@ -144,8 +144,6 @@ kafka-acls.sh --authorizer-properties zookeeper.connect=zk1:2181,zk2:2181,zk3:21
   --add --allow-principal User:app \
   --operation Read --group app-group
 ----
-
-TIP: When SASL authentication is enabled, ACLs can also be managed using `--bootstrap-server` instead of ZooKeeper connection.
 
 === 🧩 ACL Testing
 
