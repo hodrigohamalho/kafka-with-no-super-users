@@ -1,0 +1,32 @@
+{
+  "name": "des-to-lab-mirror-source",
+  "config": {
+    "connector.class": "org.apache.kafka.connect.mirror.MirrorSourceConnector",
+
+    "source.cluster.alias": "des",
+    "target.cluster.alias": "lab",
+
+    "topics": "14007\\.mirror-maker\\..*",
+
+    "tasks.max": "8",
+
+    "sync.topic.acls.enabled": "true",
+    "sync.topic.acls.interval.seconds": "30",
+
+    "source.cluster.bootstrap.servers": "<DES_BOOTSTRAP>",
+    "source.cluster.security.protocol": "SASL_SSL",
+    "source.cluster.sasl.mechanism": "SCRAM-SHA-512",
+    "source.cluster.sasl.jaas.config": "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"14007.mm2-des-user\" password=\"...\";",
+    "source.cluster.ssl.truststore.type": "JKS",
+    "source.cluster.ssl.truststore.location": "<PATH_TRUSTSTORE_DES>",
+    "source.cluster.ssl.truststore.password": "...",
+
+    "target.cluster.bootstrap.servers": "<LAB_BOOTSTRAP>",
+    "target.cluster.security.protocol": "SASL_SSL",
+    "target.cluster.sasl.mechanism": "SCRAM-SHA-512",
+    "target.cluster.sasl.jaas.config": "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"14007.mm2-lab-user\" password=\"...\";",
+    "target.cluster.ssl.truststore.type": "JKS",
+    "target.cluster.ssl.truststore.location": "<PATH_TRUSTSTORE_LAB>",
+    "target.cluster.ssl.truststore.password": "..."
+  }
+}
